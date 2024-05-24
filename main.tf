@@ -23,6 +23,8 @@ variable "azs" {
 resource "aws_vpc" "devops_main" {
   cidr_block = "10.0.0.0/16"
 
+  enable_dns_hostnames = true
+
   tags = {
     Name = "devopswave VPC"
   }
@@ -33,6 +35,8 @@ resource "aws_subnet" "public_subnets" {
   vpc_id            = aws_vpc.devops_main.id
   cidr_block        = element(var.public_subnet_cidrs, count.index)
   availability_zone = element(var.azs, count.index)
+
+  map_public_ip_on_launch = true
 
   tags = {
     Name = "Public Subnet ${count.index + 1}"
@@ -95,6 +99,12 @@ resource "aws_security_group" "instance_sg" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 }
 
 resource "aws_instance" "my_ec2_instance" {
@@ -102,9 +112,10 @@ resource "aws_instance" "my_ec2_instance" {
   instance_type = "t2.micro"
   subnet_id     = aws_subnet.public_subnets[0].id
 
+  key_name               = "a2b-keyserv"
   vpc_security_group_ids = [aws_security_group.instance_sg.id]
 
-  associate_public_ip_address = true
+  #  associate_public_ip_address = true
 
   user_data = <<-EOF
         #!/bin/bash
@@ -120,60 +131,6 @@ resource "aws_instance" "my_ec2_instance" {
   }
 }
 
-resource "aws_security_group" "db_sg" {
-  name        = "db_sg"
-  description = "Security group for RDS DB instance"
-  vpc_id      = aws_vpc.devops_main.id
-
-  ingress {
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "db_sg"
-  }
-}
-
-resource "aws_db_subnet_group" "default" {
-  name       = "main"
-  subnet_ids = aws_subnet.private_subnets[*].id
-
-  tags = {
-    Name = "My DB subnet group"
-  }
-}
-
-resource "aws_db_instance" "default" {
-
-  vpc_security_group_ids = [aws_security_group.db_sg.id]
-  db_subnet_group_name   = aws_db_subnet_group.default.name
-
-  allocated_storage    = 20
-  storage_type         = "gp2"
-  engine               = "postgres"
-  engine_version       = "15.6"
-  instance_class       = "db.t3.micro"
-  identifier           = "madb"
-  username             = "adolfo"
-  password             = "adolfo2barros"
-  parameter_group_name = "default.postgres15"
-  skip_final_snapshot  = true
-
-  tags = {
-    Name = "My DB Instance"
-  }
-}
-
 output "instance_public_ip" {
   description = "The public IP of the instance"
   value       = aws_instance.my_ec2_instance.public_ip
@@ -183,24 +140,3 @@ output "instance_private_ip" {
   description = "The private IP of the instance"
   value       = aws_instance.my_ec2_instance.private_ip
 }
-
-output "db_instance_address" {
-  description = "The address of the RDS instance"
-  value       = aws_db_instance.default.address
-}
-
-output "db_instance_arn" {
-  description = "The ARN of the RDS instance"
-  value       = aws_db_instance.default.arn
-}
-
-output "db_instance_name" {
-  description = "The name of the RDS instance"
-  value       = aws_db_instance.default.identifier
-}
-
-output "db_instance_endpoint" {
-  description = "The connection endpoint"
-  value       = aws_db_instance.default.endpoint
-}
-
